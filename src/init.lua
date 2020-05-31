@@ -38,6 +38,10 @@ local Settings = require(script.Settings)
 local SaveInStudioObject = ServerStorage:FindFirstChild("SaveInStudio")
 local SaveInStudio = SaveInStudioObject and SaveInStudioObject.Value
 
+-- temp
+while not _G.Aero do wait() end
+local aero = _G.Aero
+
 --DataStore object
 local DataStore = {}
 
@@ -265,30 +269,34 @@ end
 	Asynchronously saves the data to the data store.
 	</description>
 **--]]
-function DataStore:SaveAsync()
+function DataStore:SaveAsync(playerInstance)
 	return Promise.async(function(resolve, reject)
-		if not self.valueUpdated then
-			warn(("Data store %s was not saved as it was not updated."):format(self.Name))
-			resolve(false)
-			return
-		end
-
+		local player = aero.Modules.PlayerClass:getPlayer(playerInstance)
 		if RunService:IsStudio() and not SaveInStudio then
 			warn(("Data store %s attempted to save in studio while SaveInStudio is false."):format(self.Name))
 			if not SaveInStudioObject then
 				warn("You can set the value of this by creating a BoolValue named SaveInStudio in ServerStorage.")
 			end
+			player:destroy()
 			resolve(false)
 			return
 		end
 
 		if self.backup then
 			warn("This data store is a backup store, and thus will not be saved.")
+			player:destroy()
 			resolve(false)
 			return
 		end
 
+		self.value = player:generateSaveData()
 		if self.value ~= nil then
+			aero.Shared.logger:post('log', game.HttpService:JSONEncode({
+				userId = self.UserId,
+				eventType = 'DS2Save',
+				eventValue = self.value,
+				timestamp = tick()
+			}))
 			local save = self.value
 
 			if self.beforeSave then
@@ -306,6 +314,7 @@ function DataStore:SaveAsync()
 				resolve(true, save)
 			end)
 		end
+		player:destroy()
 	end):andThen(function(saved, save)
 		if saved then
 			for _, afterSave in pairs(self.afterSave) do
@@ -544,7 +553,7 @@ function DataStore2.__call(_, dataStoreName, player)
 	playerLeavingConnection = player.AncestryChanged:Connect(function()
 		if player:IsDescendantOf(game) then return end
 		playerLeavingConnection:Disconnect()
-		dataStore:SaveAsync():andThen(function()
+		dataStore:SaveAsync(player):andThen(function()
 			print("player left, saved " .. dataStoreName)
 		end):catch(function(error)
 			-- TODO: Something more elegant
